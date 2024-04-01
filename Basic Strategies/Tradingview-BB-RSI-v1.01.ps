@@ -1,0 +1,88 @@
+//---------------------------------------------//
+// This source code is subject to the terms of 
+// the Mozilla Public License 2.0 at 
+// https://mozilla.org/MPL/2.0/
+// © Dillon_Grech
+//---------------------------------------------//
+
+//---------------------------------------------//
+// Simple Bollinger Band and RSI strategy which
+// takes trades based off price being above or
+// below the Bollinger Band and RSI being above
+// or below the RSI bands. This is a mean 
+// reversion strategy where strategy exits at
+// Bollinger Band centre line.
+//---------------------------------------------//
+
+//@version=5
+strategy(title="BB RSI Strategy", overlay=true)
+//---------------------------------------------//
+
+//---------------------------------------------//
+//INDICATOR 1 - BB
+bb_len = input.int(20, "BB Length")
+bb_sd  = input.float(2.0, "BB StdDev")
+bb_centre = ta.sma(close, bb_len)
+dev    = bb_sd * ta.stdev(close, bb_len)
+upper  = bb_centre + dev
+lower  = bb_centre - dev
+plot(bb_centre,  "Centre", color=#FF6D00)
+p1 = plot(upper, "Upper",  color=#2962FF)
+p2 = plot(lower, "Lower",  color=#2962FF)
+
+Ind_1_L = close < lower
+Ind_1_S = close > upper
+//---------------------------------------------//
+
+//---------------------------------------------//
+//INDICATOR 2 - RSI
+rsi_len   = input.int(14,"RSI Length")
+rsi_upper = input.int(70,"RSI Upper Band")
+rsi_lower = input.int(30,"RSI Lower Band")
+up   = ta.rma(
+   math.max(ta.change(close),0), 
+   rsi_len)
+down = ta.rma(
+   -math.min(ta.change(close),0), 
+   rsi_len)
+rsi  = down == 0 ? 100 : 
+   up == 0 ? 0 : 
+   100 - (100 / (1 + up / down))
+
+Ind_2_L = rsi < rsi_lower
+Ind_2_S = rsi > rsi_upper
+//---------------------------------------------//
+
+//---------------------------------------------//
+//ENTRY CONDITIONS
+entry_long  = strategy.position_size<=0 and
+   Ind_1_L and Ind_2_L
+entry_short = strategy.position_size>=0 and
+   Ind_1_S and Ind_2_S
+
+plotshape(entry_long, "Long Entry", 
+   shape.arrowup, location.belowbar, color.lime,
+   0, "Buy")
+
+plotshape(entry_short, "Short Entry", 
+   shape.arrowdown, location.abovebar, color.red,
+   0, "Sell")
+
+if(entry_long)
+    strategy.entry("Long Entry", strategy.long)
+if(entry_short)
+    strategy.entry("Short Entry", strategy.short)
+//---------------------------------------------//
+
+//---------------------------------------------//
+//EXIT CONDITIONS
+exit_long  = ta.crossover(close, bb_centre)
+exit_short = ta.crossunder(close, bb_centre)
+
+if(exit_long)
+    strategy.close("Long Entry", 
+       qty_percent=100)
+if(exit_short)
+    strategy.close("Short Entry",
+       qty_percent=100)
+//---------------------------------------------//
