@@ -1,0 +1,42 @@
+// This Pine Script™ code is subject to the terms of the Mozilla Public License 2.0 
+// at https://mozilla.org/MPL/2.0/
+// © Dillon_Grech
+//
+//This is a indicator script that tests currency conversion calculations
+//for all assets with 8 major currencies. Currently, the script assumes
+//account currency is USD.
+//
+//Source code and template files can be found on his GitHub at:
+//https://github.com/Dillon-Grech
+
+//@version=5
+indicator("Currency Conversion")
+
+//Define account currency crosses for possible tradable symbols (Account Currency = USD)
+usdUSDrate = 1
+gbpUSDrate = request.security('GBPUSD', 'D', close[1])
+audUSDrate = request.security('AUDUSD', 'D', close[1])
+nzdUSDrate = request.security('NZDUSD', 'D', close[1])
+cadUSDrate = request.security('CADUSD', 'D', close[1])
+chfUSDrate = request.security('CHFUSD', 'D', close[1])
+eurUSDrate = request.security('EURUSD', 'D', close[1])
+jpyUSDrate = request.security('JPYUSD', 'D', close[1])
+
+//Get quote currency for current symbol
+quoteCurrency = syminfo.currency
+
+//Find quote currency and account currency cross for current symbol
+float cr_multi = switch quoteCurrency
+    "USD" => usdUSDrate
+    "GBP" => gbpUSDrate
+    "AUD" => audUSDrate
+    "NZD" => nzdUSDrate
+    "CAD" => cadUSDrate
+    "CHF" => chfUSDrate
+    "EUR" => eurUSDrate
+    "JPY" => jpyUSDrate
+    =>
+        runtime.error("No matching MA type found.")
+        float(na)
+
+plot(cr_multi)
