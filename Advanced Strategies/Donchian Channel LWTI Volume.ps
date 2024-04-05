@@ -1,0 +1,151 @@
+// This Pine Script™ code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © Dillon_Grech
+
+//@version=5
+strategy("Donchian Channel Strategy - TradingLab", overlay=true, margin_long=100, margin_short=100)
+
+//==============================================================================
+//DONCHIAN CHANNEL
+//==============================================================================
+don_length = input.int(96, minval = 1, group = "Donchain Settings")
+don_lower =  ta.lowest(don_length)
+don_upper =  ta.highest(don_length)
+don_basis =  math.avg(don_upper, don_lower)
+plot(don_basis,     "Don Basis", color = #FF6D00)
+u = plot(don_upper, "Don Upper", color = #2962FF)
+l = plot(don_lower, "Don Lower", color = #2962FF)
+fill(u, l, color = color.rgb(33, 150, 243, 95), title = "Background")
+
+Ind_1_L = ta.crossover(close,don_upper[1])
+Ind_1_S = ta.crossunder(close,don_lower[1])
+
+//==============================================================================
+//LARRY WILLIAMS LARGE TRADE INDEX (LWTI) - LOXX
+//==============================================================================
+greencolor = #2DD204
+redcolor = #D2042D 
+
+variant(type, src, len) =>
+    sig = 0.0
+    if type == "SMA"
+        sig := ta.sma(src, len) 
+    else if type == "EMA"
+        sig := ta.ema(src, len) 
+    else if type == "WMA"
+        sig := ta.wma(src, len)   
+    else if type == "RMA"
+        sig := ta.rma(src, len)  
+    sig
+    
+LWTI_per = input.int(25, "Period", group = "LWTI Settings")
+LWTI_smthit = input.bool(false, "Smooth LWPI?", group = "LWTI Settings")
+LWTI_type = input.string("SMA", "Smoothing Type", options = ["EMA", "WMA", "RMA", "SMA"], group = "LWTI Settings")
+LWTI_smthper = input.int(20, "Smoothing Period", group = "LWTI Settings")
+
+LWTI_ma = ta.sma(close - nz(close[LWTI_per]), LWTI_per)
+LWTI_atr = ta.atr(LWTI_per)
+LWTI_out = LWTI_ma/LWTI_atr * 50 + 50
+LWTI_out := LWTI_smthit ? variant(LWTI_type, LWTI_out, LWTI_smthper) : LWTI_out
+
+LWTI_colorout = LWTI_out > 50 ? greencolor : redcolor
+plot(LWTI_out, color = LWTI_colorout, linewidth = 2)
+
+Ind_2_L = LWTI_colorout == greencolor
+Ind_2_S = LWTI_colorout == redcolor
+
+//==============================================================================
+//VOLUME INDICATOR
+//==============================================================================
+Vol_Ma_Period = input.int(30,"Volume MA Period", group = "Volume Settings")
+Vol_Ma = ta.sma(volume,Vol_Ma_Period)
+
+Ind_3_L = volume > Vol_Ma
+Ind_3_S = volume > Vol_Ma
+
+//==============================================================================
+//ENTRY CONDITIONS
+//==============================================================================
+entry_long  = strategy.position_size<=0 and Ind_1_L and Ind_2_L and Ind_3_L
+entry_short = strategy.position_size>=0 and Ind_1_S and Ind_2_S and Ind_3_S
+
+//Stores whether a trade has been taken, and resets when there is a cross of price and donchain basis
+Trade_Counter = float(0)
+Don_Basis_Cross = ta.cross(don_basis[1], close)
+if strategy.position_size!=0
+    Trade_Counter := 1
+else if Don_Basis_Cross
+    Trade_Counter := 0
+else 
+    Trade_Counter := Trade_Counter[1]
+
+Plot_Trade_Counter = input.bool(false,"Plot Trade Position Counter?", group = "Plot Settings")
+plotchar(Plot_Trade_Counter and Trade_Counter == 0 ? true : false, color = na, text = '0')
+plotchar(Plot_Trade_Counter and Trade_Counter == 1 ? true : false, color = na, text = '1')
+
+plotshape(entry_long and Trade_Counter[1] == 0, "Long Entry", 
+   shape.arrowup, location.belowbar, color.lime,
+   0, "Buy")
+
+plotshape(entry_short and Trade_Counter[1] == 0, "Short Entry", 
+   shape.arrowdown, location.abovebar, color.red,
+   0, "Sell")
+
+if(entry_long and Trade_Counter[1] == 0)
+    strategy.entry("Long Entry", strategy.long)
+if(entry_short and Trade_Counter[1] == 0)
+    strategy.entry("Short Entry", strategy.short)
+
+//==============================================================================
+// TAKE PROFIT AND STOP LOSS CONDITIONS
+//==============================================================================
+Profit_RR = input.float(2.0,"Risk Reward Profit Target", group = "Risk Settings")
+
+//Store Price on new entry signal
+Entry_Price = strategy.opentrades.entry_price(strategy.opentrades - 1)
+
+//Store Donchain Channel Basis value on new entry signal
+Entry_Don_Basis = float(0.0)
+if strategy.position_size == 0 or entry_long or entry_short
+    Entry_Don_Basis := don_basis
+else
+    Entry_Don_Basis := Entry_Don_Basis[1]
+
+Stop_Distance = math.abs(Entry_Price - Entry_Don_Basis)*1.02
+
+//For Long Trades, find the stop loss level
+Stop_L = Entry_Price - Stop_Distance
+
+//For Long Trades, find the profit level
+Profit_L = Entry_Price + Stop_Distance*Profit_RR
+
+//For Short Trades, find the stop loss level
+Stop_S = Entry_Price + Stop_Distance
+
+//For Short Trades, find the profit level
+Profit_S = Entry_Price - Stop_Distance*Profit_RR
+
+//Plot profit and stop loss levels for long and short trades
+plot(strategy.position_size > 0 ? Profit_L : na, color=color.lime, style=plot.style_linebr, linewidth=2)
+plot(strategy.position_size > 0 ? Stop_L : na,   color=color.red,  style=plot.style_linebr, linewidth=2)
+plot(strategy.position_size < 0 ? Profit_S : na, color=color.lime, style=plot.style_linebr, linewidth=2)
+plot(strategy.position_size < 0 ? Stop_S : na,   color=color.red,  style=plot.style_linebr, linewidth=2)
+
+//==============================================================================
+//EXIT ORDERS
+//==============================================================================
+//Exit long trades
+strategy.exit(id = 'Exit Long', from_entry ='Long Entry', comment='Long Exit',  stop = Stop_L, limit = Profit_L)
+
+//Exit short trades
+strategy.exit(id = 'Exit Short', from_entry ='Short Entry', comment='Short Exit', stop = Stop_S, limit = Profit_S)
+
+//==============================================================================
+//CLOSE ORDERS
+//==============================================================================
+exit_long  = close < don_basis
+exit_short = close > don_basis
+
+if(exit_long)
+    strategy.close("Long Entry", qty_percent=100)
+if(exit_short)
+    strategy.close("Short Entry", qty_percent=100)
