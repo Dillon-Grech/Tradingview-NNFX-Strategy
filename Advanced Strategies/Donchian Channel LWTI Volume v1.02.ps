@@ -1,0 +1,178 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0 
+//at https://mozilla.org/MPL/2.0/
+// © DillonGrech
+//
+//This is a Donchian Channel Trading Strategy which was found through the 
+//YouTube channel TradingLab. 
+
+//This Strategy uses the Donchian Channel, Larry Williams Large Trade Index,
+//and Volume with Moving Average indicators for long and short trades.
+//
+//Strategy will enter based off indicator entry conditions and will not
+//re-enter a trade until the price crosses through the Donchian Channel
+//basis line (to prevent re-entering trades in same trend). Strategy will
+//exit at stop loss or take profit, or when price crosses donchian basis.
+//
+//The strategy has been coded by Dillon Grech as part of his YouTube channel
+//and a detailed video can be found on his channel at:
+//https://www.youtube.com/c/DillonGrech
+//https://www.youtube.com/watch?v=5IFe2Vjf61Y
+//Source code can also be found on his GitHub at:
+//https://github.com/Dillon-Grech
+//==============================================================================
+//@version=5
+strategy("Donchian Channel Strategy - TradingLab", overlay=true, margin_long=100, margin_short=100)
+
+//==============================================================================
+//DONCHIAN CHANNEL
+//==============================================================================
+//Allow user to select whether they would like to use indicator
+Don_Input = input(true, title='Use Donchian Channel?', group = "Donchian Settings")
+
+//Indicator
+don_length = input.int(96, minval = 1, group = "Donchian Settings")
+don_lower  = ta.lowest(don_length)
+don_upper  = ta.highest(don_length)
+don_basis  = math.avg(don_upper, don_lower)
+plot(don_basis,     "Don Basis", color = #FF6D00)
+u = plot(don_upper, "Don Upper", color = #2962FF)
+l = plot(don_lower, "Don Lower", color = #2962FF)
+fill(u, l, color = color.rgb(33, 150, 243, 95), title = "Background")
+
+//Conditions - Enter trades when there is a cross of price and previous donchian channel value
+Ind_1_L = Don_Input == false ? false : ta.crossover(close,don_upper[1])
+Ind_1_S = Don_Input == false ? false : ta.crossunder(close,don_lower[1])
+
+//==============================================================================
+//LARRY WILLIAMS LARGE TRADE INDEX (LWTI) - LOXX
+//==============================================================================
+//Allow user to select whether they would like to use indicator
+LWTI_Input = input(true, title='Use LWTI?', group = "LWTI Settings")
+
+//Indicator
+greencolor = #2DD204
+redcolor = #D2042D 
+
+variant(type, src, len) =>
+    sig = 0.0
+    if type == "SMA"
+        sig := ta.sma(src, len) 
+    else if type == "EMA"
+        sig := ta.ema(src, len) 
+    else if type == "WMA"
+        sig := ta.wma(src, len)   
+    else if type == "RMA"
+        sig := ta.rma(src, len)  
+    sig
+    
+LWTI_per = input.int(25, "Period", group = "LWTI Settings")
+LWTI_smthit = input.bool(false, "Smooth LWPI?", group = "LWTI Settings")
+LWTI_type = input.string("SMA", "Smoothing Type", options = ["EMA", "WMA", "RMA", "SMA"], group = "LWTI Settings")
+LWTI_smthper = input.int(20, "Smoothing Period", group = "LWTI Settings")
+
+LWTI_ma = ta.sma(close - nz(close[LWTI_per]), LWTI_per)
+LWTI_atr = ta.atr(LWTI_per)
+LWTI_out = LWTI_ma/LWTI_atr * 50 + 50
+LWTI_out := LWTI_smthit ? variant(LWTI_type, LWTI_out, LWTI_smthper) : LWTI_out
+
+LWTI_colorout = LWTI_out > 50 ? greencolor : redcolor
+
+//Conditions - Enter on color of indicator
+Ind_2_L = LWTI_Input == false ? true : LWTI_colorout == greencolor
+Ind_2_S = LWTI_Input == false ? true : LWTI_colorout == redcolor
+
+//==============================================================================
+//VOLUME INDICATOR
+//==============================================================================
+//Allow user to select whether they would like to use indicator
+Vol_Input = input(true, title='Use Volume?', group = "Volume Settings")
+
+//Indicator
+Vol_Ma_Period = input.int(30,"Volume MA Period", group = "Volume Settings")
+Vol_Ma = ta.sma(volume,Vol_Ma_Period)
+
+//Conditions - Enter when volume is greater than moving average
+Ind_3_L = Vol_Input == false ? true : volume > Vol_Ma
+Ind_3_S = Vol_Input == false ? true : volume > Vol_Ma
+
+//==============================================================================
+//DONCHIAN CHANNEL TRADE COUNTER
+//==============================================================================
+//Stores whether a trade has been taken, and resets when there is a cross of price and donchain basis
+Trade_Counter = float(0)
+Don_Basis_Cross = ta.cross(don_basis[1], close)
+if strategy.position_size!=0
+    Trade_Counter := 1
+else if Don_Basis_Cross
+    Trade_Counter := 0
+else 
+    Trade_Counter := Trade_Counter[1]
+
+Plot_Trade_Counter = input.bool(false, "Plot Trade Position Counter?", group = "Plot Settings")
+plotchar(Plot_Trade_Counter and Trade_Counter == 0 ? true : false, color = na, text = '0')
+plotchar(Plot_Trade_Counter and Trade_Counter == 1 ? true : false, color = na, text = '1')
+
+//==============================================================================
+//ENTRY CONDITIONS
+//==============================================================================
+entry_long  = strategy.position_size<=0 and Ind_1_L and Ind_2_L and Ind_3_L and Trade_Counter[1] == 0
+entry_short = strategy.position_size>=0 and Ind_1_S and Ind_2_S and Ind_3_S and Trade_Counter[1] == 0
+
+Plot_Entry = input.bool(true, "Plot Entry?", group = "Plot Settings")
+plotshape(Plot_Entry and entry_long ? true : false , "Long Entry", shape.arrowup, location.belowbar, color.lime, 0, "Buy")
+plotshape(Plot_Entry and entry_short ? true : false, "Short Entry", shape.arrowdown, location.abovebar, color.red, 0, "Sell")
+
+if(entry_long)
+    strategy.entry("Long Entry", strategy.long)
+if(entry_short)
+    strategy.entry("Short Entry", strategy.short)
+
+//==============================================================================
+// TAKE PROFIT AND STOP LOSS CONDITIONS
+//==============================================================================
+Profit_RR = input.float(2.0,"Risk Reward Profit Target", group = "Risk Settings")
+
+//Store Price on new entry signal
+Entry_Price = strategy.opentrades.entry_price(strategy.opentrades - 1)
+
+//Store Donchain Channel Basis value on new entry signal
+Entry_Don_Basis = float(0.0)
+if strategy.position_size == 0 or entry_long or entry_short
+    Entry_Don_Basis := don_basis
+else
+    Entry_Don_Basis := Entry_Don_Basis[1]
+
+//Get stop loss distance
+Stop_Distance = math.abs(Entry_Price - Entry_Don_Basis)*1.02
+
+//Store Take Profits and Stop Loss for both Long and Shorts
+Stop_L   = Entry_Price - Stop_Distance
+Profit_L = Entry_Price + Stop_Distance*Profit_RR
+Stop_S   = Entry_Price + Stop_Distance
+Profit_S = Entry_Price - Stop_Distance*Profit_RR
+
+//Plot profit and stop loss levels for long and short trades
+plot(strategy.position_size > 0 ? Profit_L : na, color=color.lime, style=plot.style_linebr, linewidth=2)
+plot(strategy.position_size > 0 ? Stop_L : na,   color=color.red,  style=plot.style_linebr, linewidth=2)
+plot(strategy.position_size < 0 ? Profit_S : na, color=color.lime, style=plot.style_linebr, linewidth=2)
+plot(strategy.position_size < 0 ? Stop_S : na,   color=color.red,  style=plot.style_linebr, linewidth=2)
+
+//==============================================================================
+//EXIT ORDERS
+//==============================================================================
+//Exit long trades
+strategy.exit(id = 'Exit Long', from_entry ='Long Entry', comment='Long Exit',  stop = Stop_L, limit = Profit_L)
+
+//Exit short trades
+strategy.exit(id = 'Exit Short', from_entry ='Short Entry', comment='Short Exit', stop = Stop_S, limit = Profit_S)
+
+//==============================================================================
+//CLOSE ORDERS
+//==============================================================================
+exit_long  = close < don_basis
+exit_short = close > don_basis
+
+if(exit_long)
+    strategy.close("Long Entry", qty_percent=100)
+if(exit_short)
+    strategy.close("Short Entry", qty_percent=100)
