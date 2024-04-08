@@ -4,7 +4,7 @@
 //
 //This is a Donchian Channel Trading Strategy which was found through the 
 //YouTube channel TradingLab. 
-
+//
 //This Strategy uses the Donchian Channel, Larry Williams Large Trade Index,
 //and Volume with Moving Average indicators for long and short trades.
 //
@@ -17,11 +17,11 @@
 //and a detailed video can be found on his channel at:
 //https://www.youtube.com/c/DillonGrech
 //https://www.youtube.com/watch?v=5IFe2Vjf61Y
-//Source code can also be found on his GitHub at:
+//Source code and template files can be found on his GitHub at:
 //https://github.com/Dillon-Grech
 //==============================================================================
 //@version=5
-strategy("Donchian Channel Strategy - TradingLab", overlay=true, margin_long=100, margin_short=100)
+strategy("Donchian Channel Strategy [DillonGrech]", overlay=true, margin_long=100, margin_short=100)
 
 //==============================================================================
 //DONCHIAN CHANNEL
@@ -118,10 +118,6 @@ plotchar(Plot_Trade_Counter and Trade_Counter == 1 ? true : false, color = na, t
 entry_long  = strategy.position_size<=0 and Ind_1_L and Ind_2_L and Ind_3_L and Trade_Counter[1] == 0
 entry_short = strategy.position_size>=0 and Ind_1_S and Ind_2_S and Ind_3_S and Trade_Counter[1] == 0
 
-Plot_Entry = input.bool(true, "Plot Entry?", group = "Plot Settings")
-plotshape(Plot_Entry and entry_long ? true : false , "Long Entry", shape.arrowup, location.belowbar, color.lime, 0, "Buy")
-plotshape(Plot_Entry and entry_short ? true : false, "Short Entry", shape.arrowdown, location.abovebar, color.red, 0, "Sell")
-
 if(entry_long)
     strategy.entry("Long Entry", strategy.long)
 if(entry_short)
@@ -130,6 +126,8 @@ if(entry_short)
 //==============================================================================
 // TAKE PROFIT AND STOP LOSS CONDITIONS
 //==============================================================================
+Stop_Input   = input(true, title='Use Stop Loss?', group = "Risk Settings")
+Profit_Input = input(true, title='Use Take Profit?', group = "Risk Settings")
 Profit_RR = input.float(2.0,"Risk Reward Profit Target", group = "Risk Settings")
 
 //Store Price on new entry signal
@@ -145,11 +143,33 @@ else
 //Get stop loss distance
 Stop_Distance = math.abs(Entry_Price - Entry_Don_Basis)*1.02
 
-//Store Take Profits and Stop Loss for both Long and Shorts
-Stop_L   = Entry_Price - Stop_Distance
-Profit_L = Entry_Price + Stop_Distance*Profit_RR
-Stop_S   = Entry_Price + Stop_Distance
-Profit_S = Entry_Price - Stop_Distance*Profit_RR
+//For Long Trades, find the stop loss level
+Stop_L = float(0.0)
+if Stop_Input == true
+    Stop_L := Entry_Price - Stop_Distance
+else
+    na
+
+//For Long Trades, find the profit level
+Profit_L = float(0.0)
+if Profit_Input == true
+    Profit_L := Entry_Price + Stop_Distance*Profit_RR
+else
+    na
+
+//For Short Trades, find the stop loss level
+Stop_S = float(0.0)
+if Stop_Input == true
+    Stop_S   := Entry_Price + Stop_Distance
+else
+    na
+
+//For Short Trades, find the profit level
+Profit_S = float(0.0)
+if Profit_Input == true
+    Profit_S := Entry_Price - Stop_Distance*Profit_RR
+else
+    na
 
 //Plot profit and stop loss levels for long and short trades
 plot(strategy.position_size > 0 ? Profit_L : na, color=color.lime, style=plot.style_linebr, linewidth=2)
@@ -161,10 +181,18 @@ plot(strategy.position_size < 0 ? Stop_S : na,   color=color.red,  style=plot.st
 //EXIT ORDERS
 //==============================================================================
 //Exit long trades
-strategy.exit(id = 'Exit Long', from_entry ='Long Entry', comment='Long Exit',  stop = Stop_L, limit = Profit_L)
+if Stop_Input
+    strategy.exit(id = 'Exit Long', from_entry ='Long Entry', comment='Long Stop',  stop = Stop_L)
+
+if Profit_Input
+    strategy.exit(id = 'Exit Long', from_entry ='Long Entry', comment='Long Profit', limit = Profit_L)
 
 //Exit short trades
-strategy.exit(id = 'Exit Short', from_entry ='Short Entry', comment='Short Exit', stop = Stop_S, limit = Profit_S)
+if Stop_Input
+    strategy.exit(id = 'Exit Short', from_entry ='Short Entry', comment='Short Stop', stop = Stop_S)
+
+if Profit_Input
+    strategy.exit(id = 'Exit Short', from_entry ='Short Entry', comment='Short Profit', limit = Profit_S)
 
 //==============================================================================
 //CLOSE ORDERS
@@ -173,6 +201,6 @@ exit_long  = close < don_basis
 exit_short = close > don_basis
 
 if(exit_long)
-    strategy.close("Long Entry", qty_percent=100)
+    strategy.close("Long Entry", comment='Long Close', qty_percent=100)
 if(exit_short)
-    strategy.close("Short Entry", qty_percent=100)
+    strategy.close("Short Entry", comment='Short Close', qty_percent=100)
