@@ -1,0 +1,121 @@
+//---------------------------------------------//
+// This source code is subject to the terms of 
+// the Mozilla Public License 2.0 at 
+// https://mozilla.org/MPL/2.0/
+// © Dillon_Grech
+//---------------------------------------------//
+
+//---------------------------------------------//
+// Simple donchian channel break out strategy
+// which only enters trades when price closes
+// above donchian upper and creates new high 
+// (long) or price closes below donchian lower
+// and creates new low, relative to the donchian
+// length. This is indicated by the donchian
+// upper and lower color (blue). Stop loss is
+// located at donchian basis and take profit
+// is set at Risk Reward (RR) profit target.
+//---------------------------------------------//
+//@version=5
+strategy("Donchian New High/Low Strategy [Dillon Grech]", overlay=true)
+
+//---------------------------------------------//
+
+//---------------------------------------------//
+//INDICATOR 1 - Donchian New High Low Price Close
+don_length = input.int(20, minval = 1)
+don_lower  = ta.lowest(don_length)
+don_upper  = ta.highest(don_length)
+don_basis  = math.avg(don_upper, don_lower)
+
+//loop
+don_lower_upper  = true
+don_higher_lower = true
+for i = 0 to don_length - 1
+    //Check for higher high over don_length
+    if don_upper > don_upper[i]
+        don_lower_upper := false
+    //Check for lower low over don_length
+    if don_lower < don_lower[i]
+        don_higher_lower := false
+
+//Plot
+c_ora = color.orange
+c_blu = color.blue
+c_gra = color.gray
+color_basis = c_ora
+color_upper = don_lower_upper  ? c_blu : c_gra
+color_lower = don_higher_lower ? c_blu : c_gra
+plot(don_basis,     "Don Basis", color_basis, 2)
+u = plot(don_upper, "Don Upper", color_upper, 2)
+l = plot(don_lower, "Don Lower", color_lower, 2)
+
+//Conditions
+Ind_1_L = ta.crossover(close, don_upper[1]) and 
+   don_lower_upper[1]
+Ind_1_S = ta.crossunder(close,don_lower[1]) and 
+   don_higher_lower[1]
+//---------------------------------------------//
+
+//---------------------------------------------//
+//ENTRY CONDITIONS
+entry_long  = strategy.position_size<=0 and
+   Ind_1_L
+entry_short = strategy.position_size>=0 and
+   Ind_1_S
+
+if(entry_long)
+    strategy.entry("Long Entry", strategy.long)
+if(entry_short)
+    strategy.entry("Short Entry", strategy.short)
+//---------------------------------------------/
+
+//---------------------------------------------//
+//TAKE PROFIT AND STOP LOSS CONDITIONS
+profit_RR = input.float(5.0,"RR Profit Target")
+
+//Store Price on new entry signal
+entry_price = strategy.opentrades.entry_price(
+   strategy.opentrades-1)
+
+//Store Donchain Channel Basis
+entry_don_basis = float(0.0)
+if entry_long or entry_short
+    entry_don_basis := don_basis
+else
+    entry_don_basis := entry_don_basis[1]
+
+//Get stop loss distance
+stop_distance = math.abs(entry_price -
+   entry_don_basis)
+stop_L   = entry_price - stop_distance
+profit_L = entry_price + stop_distance*profit_RR
+stop_S   = entry_price + stop_distance
+profit_S = entry_price - stop_distance*profit_RR
+
+//Plot TP and SL
+plot(entry_long or entry_short ? na :
+   strategy.position_size > 0 ? profit_L : na,
+   color=color.lime, style=plot.style_linebr,
+   linewidth=2)
+plot(entry_long or entry_short ? na :
+   strategy.position_size > 0 ? stop_L : na,
+   color=color.red,  style=plot.style_linebr,
+   linewidth=2)
+plot(entry_long or entry_short ? na : 
+   strategy.position_size < 0 ? profit_S : na,
+   color=color.lime, style=plot.style_linebr,
+   linewidth=2)
+plot(entry_long or entry_short ? na :
+   strategy.position_size < 0 ? stop_S : na,
+   color=color.red,  style=plot.style_linebr,
+   linewidth=2)
+
+//Exit long trades
+strategy.exit(id = 'Exit Long', 
+   from_entry ='Long Entry', 
+   stop = stop_L, limit = profit_L)
+strategy.exit(id = 'Exit Short', 
+   from_entry ='Short Entry', 
+   stop = stop_S, limit = profit_S)
+//---------------------------------------------//
